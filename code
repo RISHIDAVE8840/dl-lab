@@ -40,6 +40,157 @@ print(f"With BatchNorm: {run(Net(bn=True)):.2f}%")
 print(f"With Dropout: {run(Net(do=True)):.2f}%")
 
 
+
+
+
+
+5th
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+import matplotlib.pyplot as plt
+
+# Device support
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# 1. Data Loading
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+])
+
+train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+# 2. CNN Definition
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.relu = nn.ReLU()
+        self._to_linear = None  # Will be set in forward
+
+        self.fc1 = nn.Linear(64 * 8 * 8, 128)  # 32x32 → 16x16 → 8x8
+        self.fc2 = nn.Linear(128, 10)
+
+    def forward(self, x):
+        x = self.pool(self.relu(self.conv1(x)))
+        x = self.pool(self.relu(self.conv2(x)))
+        if self._to_linear is None:
+            self._to_linear = x.view(x.size(0), -1).shape[1]
+        x = x.view(-1, self._to_linear)
+        x = self.relu(self.fc1(x))
+        return self.fc2(x)
+
+# 3. Train & Evaluate Function
+def train_and_evaluate(model, optimizer, criterion, epochs=5):
+    model.to(device)
+    train_losses, test_losses, test_accuracies = [], [], []
+
+    for epoch in range(epochs):
+        model.train()
+        running_train_loss = 0.0
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_train_loss += loss.item()
+        train_losses.append(running_train_loss / len(train_loader))
+
+        model.eval()
+        running_test_loss, correct_predictions, total_samples = 0.0, 0, 0
+        with torch.no_grad():
+            for images, labels in test_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                running_test_loss += loss.item()
+                _, predicted = torch.max(outputs, 1)
+                correct_predictions += (predicted == labels).sum().item()
+                total_samples += labels.size(0)
+
+        test_losses.append(running_test_loss / len(test_loader))
+        accuracy = 100 * correct_predictions / total_samples
+        test_accuracies.append(accuracy)
+
+        print(f"Epoch [{epoch+1}/{epochs}], "
+              f"Train Loss: {train_losses[-1]:.4f}, "
+              f"Test Loss: {test_losses[-1]:.4f}, "
+              f"Accuracy: {accuracy:.2f}%")
+
+    return train_losses, test_losses, test_accuracies
+
+# 4. Setup Optimizers & Experiments
+criterion = nn.CrossEntropyLoss()
+experiments = {
+    "SGD": {
+        "model": SimpleCNN(),
+        "optimizer": None,
+        "train_losses": [],
+        "test_losses": [],
+        "accuracies": []
+    },
+    "Adam": {
+        "model": SimpleCNN(),
+        "optimizer": None,
+        "train_losses": [],
+        "test_losses": [],
+        "accuracies": []
+    }
+}
+
+experiments["SGD"]["optimizer"] = optim.SGD(experiments["SGD"]["model"].parameters(), lr=0.01, momentum=0.9)
+experiments["Adam"]["optimizer"] = optim.Adam(experiments["Adam"]["model"].parameters(), lr=0.001)
+
+# Run training
+for name, exp_data in experiments.items():
+    print(f"\nTraining with {name} Optimizer:")
+    exp_data["train_losses"], exp_data["test_losses"], exp_data["accuracies"] = \
+        train_and_evaluate(exp_data["model"], exp_data["optimizer"], criterion)
+
+# 5. Plotting
+epochs_range = range(1, 6)
+plt.figure(figsize=(12, 5))
+
+# Loss Plot
+plt.subplot(1, 2, 1)
+plt.plot(epochs_range, experiments["SGD"]["train_losses"], label='SGD - Train Loss')
+plt.plot(epochs_range, experiments["SGD"]["test_losses"], label='SGD - Test Loss')
+plt.plot(epochs_range, experiments["Adam"]["train_losses"], label='Adam - Train Loss')
+plt.plot(epochs_range, experiments["Adam"]["test_losses"], label='Adam - Test Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('Loss Comparison')
+plt.legend()
+
+# Accuracy Plot
+plt.subplot(1, 2, 2)
+plt.plot(epochs_range, experiments["SGD"]["accuracies"], label='SGD - Accuracy')
+plt.plot(epochs_range, experiments["Adam"]["accuracies"], label='Adam - Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy (%)')
+plt.title('Accuracy Comparison')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
 6th
 import tensorflow as tf
 from tensorflow.keras import layers, models
@@ -132,6 +283,79 @@ for epoch in range(10):
 
 
 
+10th
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# Prepare character-level data
+text = "hello world, this is a simple text generation using LSTMs."
+chars = sorted(set(text))
+char2idx = {c: i for i, c in enumerate(chars)}
+idx2char = {i: c for c, i in char2idx.items()}
+seq_len = 10
+
+# Create input-output sequences
+X = [[char2idx[c] for c in text[i:i+seq_len]] for i in range(len(text) - seq_len)]
+Y = [char2idx[text[i+seq_len]] for i in range(len(text) - seq_len)]
+X, Y = torch.tensor(X), torch.tensor(Y)
+
+# Use GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+X, Y = X.to(device), Y.to(device)
+
+# Define LSTM model
+class TextLSTM(nn.Module):
+    def __init__(self, vocab_size, embed_size, hidden_size):
+        super().__init__()
+        self.embed = nn.Embedding(vocab_size, embed_size)
+        self.lstm = nn.LSTM(embed_size, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, vocab_size)
+
+    def forward(self, x):
+        x = self.embed(x)
+        x, _ = self.lstm(x)
+        return self.fc(x[:, -1])  # Only last output
+
+# Model, loss, optimizer
+vocab_size, embed_size, hidden_size = len(chars), 16, 128
+model = TextLSTM(vocab_size, embed_size, hidden_size).to(device)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.01)
+
+# Training loop
+for epoch in range(50):
+    model.train()
+    optimizer.zero_grad()
+    output = model(X)
+    loss = criterion(output, Y)
+    loss.backward()
+    optimizer.step()
+    if (epoch + 1) % 10 == 0:
+        print(f"Epoch {epoch+1}, Loss: {loss.item():.4f}")
+
+# Text generation function (argmax sampling)
+def generate(start, length=50):
+    model.eval()
+    seq = [char2idx[c] for c in start]
+    result = start
+    for _ in range(length):
+        inp = torch.tensor([seq], dtype=torch.long).to(device)
+        with torch.no_grad():
+            logits = model(inp)
+            pred = torch.argmax(logits, dim=1).item()
+        result += idx2char[pred]
+        seq = seq[1:] + [pred]
+    return result
+
+# Output
+print("\nGenerated Text:\n", generate("hello wor", 50))
+
+
+
+
+
+
 
 11th
 import torch
@@ -172,3 +396,62 @@ attention = MultiHeadAttention(embed_size=128, heads=8)
 x = torch.rand(2, 10, 128)  # (batch, seq_len, embed_dim)
 output = attention(x, x, x)
 print(output.shape)  # → torch.Size([2, 10, 128])
+
+
+
+
+
+12
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, Subset
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load and transform MNIST data
+transform = transforms.ToTensor()
+train_data = Subset(datasets.MNIST('./data', train=True, download=True, transform=transform), range(200))
+test_data = Subset(datasets.MNIST('./data', train=False, download=True, transform=transform), range(50))
+train_loader = DataLoader(train_data, batch_size=10, shuffle=True)
+test_loader = DataLoader(test_data, batch_size=10)
+
+# Define Autoencoder model
+class AutoEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(28*28, 256), nn.ReLU(),
+            nn.Linear(256, 64), nn.ReLU()
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(64, 256), nn.ReLU(),
+            nn.Linear(256, 28*28), nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.decoder(self.encoder(x))
+
+model = AutoEncoder().to(device)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+criterion = nn.MSELoss()
+
+# Train the model
+for epoch in range(10):
+    model.train()
+    train_loss = 0.0
+    for img, _ in train_loader:
+        img = img.view(img.size(0), -1).to(device)
+        loss = criterion(model(img), img)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        train_loss += loss.item()
+    
+    # Evaluate
+    model.eval()
+    test_loss = sum(criterion(model(img.view(img.size(0), -1).to(device)), img.view(img.size(0), -1).to(device)).item()
+                    for img, _ in test_loader)
+
+    print(f"Epoch {epoch+1}, Train Loss: {train_loss/len(train_loader):.4f}, Test Loss: {test_loss/len(test_loader):.4f}")
